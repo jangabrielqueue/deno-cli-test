@@ -83,5 +83,6 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GAB_DENO_TEST }}'
           projectId: gab-deno-test 
           target: second
+          disableComment: true
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
