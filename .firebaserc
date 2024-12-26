@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "gab-deno-test"
+  },
+  "targets": {
+    "gab-deno-test": {
+      "hosting": {
+        "first": [
+          "gab-first-test"
+        ],
+        "second": [
+          "gab-second-test"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
