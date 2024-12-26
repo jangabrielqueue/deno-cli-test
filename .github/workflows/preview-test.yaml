@@ -13,7 +13,7 @@ jobs:
   First:
     runs-on: ubuntu-latest
     outputs:
-      preview_url: ${{ steps.deploy.outputs.preview_url }}
+      preview_url: ${{ steps.deploy.outputs.details_url }}
     steps:
       - name: Setup repo
         uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      preview_url: ${{ steps.deploy.outputs.preview_url }}
+      preview_url: ${{ steps.deploy.outputs.details_url }}
     steps:
       - name: Setup repo
         uses: actions/checkout@v4
@@ -97,17 +97,24 @@ jobs:
     needs: [First, Second]
     runs-on: ubuntu-latest
     steps:
-      - name: Preview URL
-        run: |
-          urls=()
-          urls+=("${{ needs.First.outputs.preview_url }}")
-          urls+=("${{ needs.Second.outputs.preview_url }}")
+      - name: Post URLs as a Comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const urls = [];
+            if ('deploy-first' in context.payload.workflow_run.jobs) {
+              urls.push(`- [Preview First App](${context.payload.workflow_run.jobs['deploy-first'].outputs.preview_url})`);
+            }
+            if ('deploy-second' in context.payload.workflow_run.jobs) {
+              urls.push(`- [Preview Second App](${context.payload.workflow_run.jobs['deploy-second'].outputs.preview_url})`);
+            }
 
-          body="**Firebase Preview URLs:**\n\n"
-          for url in "${urls[@]}"; do
-            body+="- [Preview]($url)\n"
-          done
+            const body = `**Firebase Preview URLs:**\n\n${urls.join('\n')}`;
 
-          echo "$body" | jq -R '{body: .}' | curl -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -d @- "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
