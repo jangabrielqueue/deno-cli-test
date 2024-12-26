@@ -12,7 +12,8 @@ permissions:
 jobs:
   First:
     runs-on: ubuntu-latest
-
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
     steps:
       - name: Setup repo
         uses: actions/checkout@v4
@@ -39,18 +40,22 @@ jobs:
         run: deno task --cwd ./apps/first build
 
       - name: Deploy to Firebase
+        id: deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GAB_DENO_TEST }}'
           projectId: gab-deno-test 
           target: first
+          disableComment: true
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
 
   Second:
     runs-on: ubuntu-latest
 
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
     steps:
       - name: Setup repo
         uses: actions/checkout@v4
@@ -77,6 +82,7 @@ jobs:
         run: deno task --cwd ./apps/second build
 
       - name: Deploy to Firebase
+        id: deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
@@ -86,3 +92,22 @@ jobs:
           disableComment: true
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
+
+  Preview_Urls:
+    needs: [First, Second]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preview URL
+        run: |
+          urls=()
+          urls+=("${{ needs.First.outputs.preview_url }}")
+          urls+=("${{ needs.Second.outputs.preview_url }}")
+
+          body="**Firebase Preview URLs:**\n\n"
+          for url in "${urls[@]}"; do
+            body+="- [Preview]($url)\n"
+          done
+
+          echo "$body" | jq -R '{body: .}' | curl -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -d @- "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
