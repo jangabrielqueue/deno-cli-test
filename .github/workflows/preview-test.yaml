@@ -94,24 +94,15 @@ jobs:
           FIREBASE_CLI_PREVIEWS: hostingchannels
 
   Preview_Urls:
-    needs: [First, Second]
     runs-on: ubuntu-latest
+    needs: [First, Second]
     steps:
       - name: Post URLs as a Comment
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const urls = [];
-            if ('deploy-first' in context.payload.workflow_run.jobs) {
-              urls.push(`- [Preview First App](${context.payload.workflow_run.jobs['deploy-first'].outputs.preview_url})`);
-            }
-            if ('deploy-second' in context.payload.workflow_run.jobs) {
-              urls.push(`- [Preview Second App](${context.payload.workflow_run.jobs['deploy-second'].outputs.preview_url})`);
-            }
-
-            const body = `**Firebase Preview URLs:**\n\n${urls.join('\n')}`;
-
+            const body = `**Firebase Preview URLs:**\n\n - [First]${needs.First.outputs.preview_url}<br /> -[Second]${needs.Second.outputs.preview_url}`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
