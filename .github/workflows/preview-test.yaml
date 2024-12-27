@@ -5,6 +5,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+
+permissions: # Add top-level permissions
+  checks: write
+  pull-requests: write
+  contents: read
+
 jobs:
   build-and-preview:
     runs-on: ubuntu-latest
