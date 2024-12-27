@@ -71,6 +71,9 @@ jobs:
         with:
           name: preview_urls
           path: preview_urls/*.txt
+          compression-level: 0  # No compression for text files
+          overwrite: true      # Overwrite if exists
+          retention-days: 1    # Only need for PR duration
 
   Comment:
     needs: Deploy
@@ -81,6 +84,7 @@ jobs:
         with:
           name: preview_urls
           path: preview_urls
+          merge-multiple: true
 
       - name: Create Comment
         uses: actions/github-script@v6
