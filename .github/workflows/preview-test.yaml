@@ -51,15 +51,36 @@ jobs:
           channelId: pr-${{ github.event.number }}-${{ matrix.app.name }}
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
-
-      - name: Save Preview URL to artifact
+      # New step to log deployment outputs
+      - name: Log Deployment Outputs
         run: |
-          echo "${{ matrix.app.name }}=${{ steps.firebase-deploy.outputs.details_url }}" >> preview_urls.txt
-      - name: Upload Preview URLs
+          echo "App Name: ${{ matrix.app.name }}"
+          echo "Details URL: ${{ steps.firebase-deploy.outputs.details_url }}"
+          echo "URLs Output: ${{ steps.firebase-deploy.outputs.urls }}"
+          echo "Target: ${{ matrix.app.target }}"
+          echo "Path: ${{ matrix.app.path }}"
+
+      # Modified step to handle URL saving
+      - name: Save Preview URL
+        id: save-url
+        run: |
+          DETAILS_URL="${{ steps.firebase-deploy.outputs.details_url }}"
+          if [ -n "$DETAILS_URL" ]; then
+            echo "Saving URL for ${{ matrix.app.name }}: $DETAILS_URL"
+            mkdir -p preview_urls
+            echo "${{ matrix.app.name }}=$DETAILS_URL" >> preview_urls/${{ matrix.app.name }}_url.txt
+          else
+            echo "::error::No details_url found for ${{ matrix.app.name }}"
+            exit 1
+          fi
+
+      - name: Upload Preview URL
         uses: actions/upload-artifact@v3
         with:
-          name: preview-urls
-          path: preview_urls.txt
+          name: preview_urls
+          path: preview_urls/*.txt
+          if-no-files-found: warn
+
   create-comment:
     needs: build-and-preview
     runs-on: ubuntu-latest
@@ -67,23 +88,48 @@ jobs:
       - name: Download Preview URLs
         uses: actions/download-artifact@v3
         with:
-          name: preview-urls
+          name: preview_urls
+          path: preview_urls
+
+      - name: List Downloaded Files
+        run: |
+          echo "Contents of preview_urls directory:"
+          ls -la preview_urls/
+          echo "Contents of URL files:"
+          cat preview_urls/*_url.txt || echo "No URL files found"
 
       - name: Create Comment
         uses: actions/github-script@v6
         with:
           script: |
             const fs = require('fs');
-            const urls = fs.readFileSync('preview_urls.txt', 'utf8')
-              .split('\n')
-              .filter(Boolean)
-              .map(line => {
-                const [app, url] = line.split('=');
-                return `### ${app} App Preview\n${url}`;
-              })
-              .join('\n\n');
+            const path = require('path');
+            
+            // Read all URL files
+            const urlsDir = 'preview_urls';
+            let allUrls = [];
+            
+            try {
+              const files = fs.readdirSync(urlsDir);
+              for (const file of files) {
+                if (file.endsWith('_url.txt')) {
+                  const content = fs.readFileSync(path.join(urlsDir, file), 'utf8').trim();
+                  if (content) {
+                    const [app, url] = content.split('=');
+                    allUrls.push(`### ${app} App Preview\n${url}`);
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error reading URL files:', error);
+              allUrls.push('⚠️ Error reading deployment URLs');
+            }
+            
+            const urlsText = allUrls.length > 0 
+              ? allUrls.join('\n\n')
+              : '⚠️ No preview URLs available';
 
-            const body = `## 🚀 Preview Deployments\n\n${urls}\n\n> These previews will expire in 7 days.`;
+            const body = `## 🚀 Preview Deployments\n\n${urlsText}\n\n> These previews will expire in 7 days.`;
 
             // Remove any existing bot comments
             const comments = await github.rest.issues.listComments({
@@ -105,7 +151,6 @@ jobs:
               });
             }
 
-            // Create new comment
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
