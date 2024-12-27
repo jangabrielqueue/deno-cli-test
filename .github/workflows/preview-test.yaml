@@ -6,13 +6,13 @@ on:
     types: [opened, synchronize, reopened]
 
 
-permissions: # Add top-level permissions
+permissions:
   checks: write
   pull-requests: write
   contents: read
 
 jobs:
-  build-and-preview:
+  Deploy:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,7 +35,7 @@ jobs:
           deno-version: v2.x
 
       - name: CI
-        run: deno install 
+        run: deno install
 
       - name: Build ${{ matrix.app.name }}
         run: deno task --cwd ${{ matrix.app.path }} build
@@ -51,14 +51,6 @@ jobs:
           channelId: pr-${{ github.event.number }}-${{ matrix.app.name }}
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
-      # New step to log deployment outputs
-      - name: Log Deployment Outputs
-        run: |
-          echo "App Name: ${{ matrix.app.name }}"
-          echo "Details URL: ${{ steps.firebase-deploy.outputs.details_url }}"
-          echo "URLs Output: ${{ steps.firebase-deploy.outputs.urls }}"
-          echo "Target: ${{ matrix.app.target }}"
-          echo "Path: ${{ matrix.app.path }}"
 
       # Modified step to handle URL saving
       - name: Save Preview URL
@@ -75,28 +67,20 @@ jobs:
           fi
 
       - name: Upload Preview URL
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: preview_urls
           path: preview_urls/*.txt
-          if-no-files-found: warn
 
-  create-comment:
-    needs: build-and-preview
+  Comment:
+    needs: Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Download Preview URLs
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: preview_urls
           path: preview_urls
-
-      - name: List Downloaded Files
-        run: |
-          echo "Contents of preview_urls directory:"
-          ls -la preview_urls/
-          echo "Contents of URL files:"
-          cat preview_urls/*_url.txt || echo "No URL files found"
 
       - name: Create Comment
         uses: actions/github-script@v6
@@ -129,7 +113,7 @@ jobs:
               ? allUrls.join('\n\n')
               : '⚠️ No preview URLs available';
 
-            const body = `## 🚀 Preview Deployments\n\n${urlsText}\n\n> These previews will expire in 7 days.`;
+            const body = `## 🚀 Preview Deployments\n\n${urlsText}\n\n>`;
 
             // Remove any existing bot comments
             const comments = await github.rest.issues.listComments({
