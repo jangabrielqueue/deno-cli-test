@@ -42,29 +42,24 @@ jobs:
 
       - name: Deploy to Firebase Preview Channel
         uses: FirebaseExtended/action-hosting-deploy@v0
+        id: firebase-deploy
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GAB_DENO_TEST }}'
           projectId: gab-deno-test 
           target: ${{ matrix.app.target }}
+          channelId: pr-${{ github.event.number }}-${{ matrix.app.name }}
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
 
-      - name: Save Preview URL
-        run: |
-          echo "::set-output name=preview_url::$(firebase hosting:channel:get pr-${{ github.event.number }}-${{ matrix.app.name }} --json | jq -r '.url')"
-        id: preview_url
-
       - name: Save Preview URL to artifact
         run: |
-          echo "${{ matrix.app.name }}=${{ steps.preview_url.outputs.preview_url }}" >> preview_urls.txt
-        
+          echo "${{ matrix.app.name }}=${{ steps.firebase-deploy.outputs.details_url }}" >> preview_urls.txt
       - name: Upload Preview URLs
         uses: actions/upload-artifact@v3
         with:
           name: preview-urls
           path: preview_urls.txt
-
   create-comment:
     needs: build-and-preview
     runs-on: ubuntu-latest
@@ -84,11 +79,11 @@ jobs:
               .filter(Boolean)
               .map(line => {
                 const [app, url] = line.split('=');
-                return `- **${app}**: ${url}`;
+                return `### ${app} App Preview\n${url}`;
               })
-              .join('\n');
+              .join('\n\n');
 
-            const body = `🚀 Preview deployments are ready!\n\n${urls}\n\nThese previews will expire in 7 days.`;
+            const body = `## 🚀 Preview Deployments\n\n${urls}\n\n> These previews will expire in 7 days.`;
 
             // Remove any existing bot comments
             const comments = await github.rest.issues.listComments({
@@ -99,7 +94,7 @@ jobs:
 
             const botComments = comments.data.filter(comment => 
               comment.user.type === 'Bot' && 
-              comment.body.includes('Preview deployments are ready!')
+              comment.body.includes('Preview Deployments')
             );
 
             for (const comment of botComments) {
