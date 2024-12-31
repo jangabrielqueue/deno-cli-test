@@ -3,19 +3,31 @@ name: Deploy Deno WS Preview
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
+
 
 permissions:
   checks: write
-  contents: read
   pull-requests: write
+  contents: read
 
 jobs:
-  First:
+  Deploy:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Define app configurations with their paths and targets
+        app:
+          - name: 'First'
+            path: './apps/first'
+            target: 'first'
+          - name: 'Second'
+            path: './apps/second'
+            target: 'second'
+      fail-fast: false
 
     steps:
-      - name: Setup repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -24,64 +36,90 @@ jobs:
 
       - name: CI
         run: deno install
-      # Uncomment this step to verify the use of 'deno fmt' on each commit.
-      # - name: Verify formatting
-      #   run: deno fmt --check
 
-      # - name: Run linter
-      #   run: deno lint
+      - name: Build ${{ matrix.app.name }}
+        run: deno task --cwd ${{ matrix.app.path }} build
 
-      # Uncomment if you have test scripts
-      # - name: Run tests
-      #   run: deno test -A
-
-      - name: Run Test Build
-        run: deno task --cwd ./apps/first build
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
+      - name: Deploy to Firebase Preview Channel
+        uses: FirebaseExtended/action-hosting-deploy@v0.9
+        id: firebase-deploy
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_HOSTING_EZPAY_UAT }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GAB_DENO_TEST }}'
           projectId: gab-deno-test 
-          target: first
+          target: ${{ matrix.app.target }}
+          channelId: pr-${{ github.event.number }}-${{ matrix.app.name }}
+          disableComment: true
+          comment: false
         env:
           FIREBASE_CLI_PREVIEWS: hostingchannels
 
-  Second:
+      - name: Save Preview URL
+        run: |
+          mkdir -p preview_urls
+          echo "${{ matrix.app.name }}=${{ steps.firebase-deploy.outputs.details_url }}" >> preview_urls/${{ matrix.app.name }}_url.txt
+
+      - name: Upload Preview URL
+        uses: actions/upload-artifact@v3
+        with:
+          name: preview_urls
+          path: preview_urls/*.txt
+
+  Comment:
+    needs: Deploy
     runs-on: ubuntu-latest
-
     steps:
-      - name: Setup repo
-        uses: actions/checkout@v4
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Download Preview URLs
+        uses: actions/download-artifact@v3
         with:
-          deno-version: v2.x
+          name: preview_urls
+          path: preview_urls
 
-      - name: CI
-        run: deno install
-      # Uncomment this step to verify the use of 'deno fmt' on each commit.
-      # - name: Verify formatting
-      #   run: deno fmt --check
-
-      # - name: Run linter
-      #   run: deno lint
-
-      # Uncomment if you have test scripts
-      # - name: Run tests
-      #   run: deno test -A
-
-      - name: Run Test Build
-        run: deno task --cwd ./apps/second build
-
-      - name: Deploy to Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
+      - name: Create Comment
+        uses: actions/github-script@v6
         with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_HOSTING_EZPAY_UAT }}'
-          projectId: gab-deno-test 
-          target: second
-        env:
-          FIREBASE_CLI_PREVIEWS: hostingchannels
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            const urlsDir = 'preview_urls';
+            let allUrls = [];
+            
+            const files = fs.readdirSync(urlsDir);
+            for (const file of files) {
+              if (file.endsWith('_url.txt')) {
+                const content = fs.readFileSync(path.join(urlsDir, file), 'utf8').trim();
+                const [app, url] = content.split('=');
+                allUrls.push(`### ${app} App Preview\n${url}`);
+              }
+            }
+            
+            const urlsText = allUrls.join('\n\n');
+            const body = `## 🚀 Preview Deployments\n\n${urlsText}\n\n> These previews will expire in 7 days.`;
+
+            // Remove any existing bot comments
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const botComments = comments.data.filter(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Preview Deployments')
+            );
+
+            for (const comment of botComments) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id
+              });
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
