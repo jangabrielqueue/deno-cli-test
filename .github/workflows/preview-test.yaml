@@ -41,7 +41,7 @@ jobs:
         run: deno task --cwd ${{ matrix.app.path }} build
 
       - name: Deploy to Firebase Preview Channel
-        uses: FirebaseExtended/action-hosting-deploy@v0
+        uses: FirebaseExtended/action-hosting-deploy@v0.9
         id: firebase-deploy
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
